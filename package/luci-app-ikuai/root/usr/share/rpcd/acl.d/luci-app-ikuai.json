@@ -1,16 +1,19 @@
 {
 	"luci-app-ikuai": {
-		"description": "Grant read access to system/network state for the calm overview dashboard",
+		"description": "Read system/network state for the calm overview dashboard",
 		"read": {
 			"ubus": {
 				"system": [ "info", "board" ],
-				"network": [ "interface", "*" ],
 				"network.interface": [ "dump", "status" ],
 				"service": [ "list" ],
+				"luci": [ "getDHCPLeases" ],
 				"file": [ "read" ]
 			},
 			"uci": [ "*" ],
-			"file": [ "/tmp/dhcp.leases", "/tmp/*" ]
+			"file": {
+				"/proc/net/arp": [ "read" ],
+				"/tmp/dhcp.leases": [ "read" ]
+			}
 		},
 		"write": {
 			"ubus": {
