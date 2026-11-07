@@ -8,11 +8,33 @@ var callBoard      = rpc.declare({ object: 'system', method: 'board' });
 var callNetDump    = rpc.declare({ object: 'network.interface', method: 'dump' });
 var callLeases     = rpc.declare({ object: 'luci', method: 'getDHCPLeases' });
 var callSvcList    = rpc.declare({ object: 'service', method: 'list' });
+var callFileRead   = rpc.declare({ object: 'file', method: 'read', params: [ 'path' ] });
 
 /* 每个取数都兜底：某个接口在老固件上不存在时返回 null，
    页面显示「—」而不是整页报错。绝不编一个数出来。 */
 function safe(p, fallback) {
 	return p.then(function(r) { return r; }).catch(function() { return fallback; });
+}
+
+function decodeData(r) {
+	var s = (r && r.data) ? String(r.data) : '';
+	if (!s) return '';
+	if (s.indexOf('IP address') >= 0 || s.indexOf('0x') >= 0) return s;
+	try { return atob(s); } catch (e) { return s; }
+}
+
+/* /proc/net/arp 每行：IP  0x1  0x2  MAC  *  br-lan
+   只认有 MAC 的完整条目，00:00:00:00:00:00 是占位，不是真终端。 */
+function parseArp(text) {
+	var out = [];
+	(text || '').split('\n').forEach(function(line) {
+		var p = line.trim().split(/\s+/);
+		if (p.length < 6) return;
+		if (!/^\d+\.\d+\.\d+\.\d+$/.test(p[0])) return;
+		if (p[3] === '00:00:00:00:00:00') return;
+		out.push({ ip: p[0], macaddr: p[3], hostname: '' });
+	});
+	return out;
 }
 
 function fmtBytes(b) {
@@ -72,7 +94,8 @@ return view.extend({
 			safe(callBoard({}), {}),
 			safe(callNetDump({}), {}),
 			safe(callLeases({}), []),
-			safe(callSvcList({}), {})
+			safe(callSvcList({}), {}),
+			safe(callFileRead('/proc/net/arp'), {})
 		]);
 	},
 
@@ -80,6 +103,16 @@ return view.extend({
 		var info = data[0] || {}, board = data[1] || {}, dump = data[2] || {};
 		var leases = data[3] || [], svcs = data[4] || {};
 		var self = this;
+
+		/* 旁路由模式关掉了 DHCP，租约会一直是空的。这时终端只能从 ARP 表来，
+		   否则首页会一直说「没有终端在线」，那不是真的。 */
+		var arpList = parseArp(decodeData(data[5]));
+		var term = leases.slice();
+		var seenIp = {};
+		term.forEach(function(l) { seenIp[l.ip] = 1; });
+		arpList.forEach(function(a) {
+			if (!seenIp[a.ip]) { term.push(a); seenIp[a.ip] = 1; }
+		});
 
 		/* 视觉层：只在这一页加载我们自己的 CSS，不碰主题包的 cascade.css */
 		var link = E('link', {
@@ -143,7 +176,7 @@ return view.extend({
 		}
 
 		/* ── 终端表 ── */
-		var rows = leases.slice(0, 12).map(function(l) {
+		var rows = term.slice(0, 12).map(function(l) {
 			return E('tr', {}, [
 				E('td', {}, l.hostname || '未知设备'),
 				E('td', { 'class': 'iw-num' }, l.ip || '—'),
@@ -156,7 +189,7 @@ return view.extend({
 			E('tr', {}, E('td', { 'colspan': '4' },
 				E('div', { 'class': 'iw-state' } , [
 					E('b', {}, '当前没有终端在线'),
-					E('span', {}, 'DHCP 租约为空。若刚重启过网络，等待 1–2 分钟；若一直如此，去「网络」检查 WAN 是否拨号成功。')
+					E('span', {}, '租约和 ARP 表都是空的。旁路由模式默认关闭 DHCP，终端要主动通信过一次才会出现在 ARP 里；若一直为空，检查 LAN 口是否与主路由同网段。')
 				]))));
 
 		var pw = passwallRunning(svcs);
@@ -178,8 +211,8 @@ return view.extend({
 					'<span id="iw-tx">—</span><span class="iw-u">/s</span>',
 					'累计发送 ' + fmtBytes(st.tx)),
 				kpi('', '在线终端',
-					leases.length + '<span class="iw-u">台</span>',
-					'DHCP 租约 ' + leases.length + ' 条'),
+					term.length + '<span class="iw-u">台</span>',
+					'租约 ' + leases.length + ' · ARP ' + arpList.length),
 				kpi('', '运行时长',
 					fmtUptime(info.uptime),
 					'负载 ' + ((info.load && info.load[0]) ? info.load[0].toFixed(2) : '—'))
@@ -241,7 +274,7 @@ return view.extend({
 
 			E('div', { 'class': 'iw-card', 'style': 'margin-top:12px' }, [
 				E('div', { 'class': 'iw-card-hd' }, [ '在线终端',
-					E('span', { 'class': 'iw-r' }, '共 ' + leases.length + ' 台 · 来自 DHCP 租约') ]),
+					E('span', { 'class': 'iw-r' }, '共 ' + term.length + ' 台 · DHCP 租约 + ARP') ]),
 				E('table', { 'class': 'iw-table' }, [
 					E('thead', {}, E('tr', {}, [
 						E('th', {}, '主机'), E('th', {}, 'IP 地址'),
