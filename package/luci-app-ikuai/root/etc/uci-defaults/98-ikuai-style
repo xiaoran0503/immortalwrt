@@ -1,0 +1,24 @@
+#!/bin/sh
+# 首启把视觉覆盖层追加到 Argon 的 cascade.css 末尾。
+#
+# 为什么不直接把 cascade.css 打进包里覆盖：同路径同名文件会被 apk/opkg
+# 判成文件冲突，装不上。运行时追加既不冲突，也不改动上游包的校验和。
+#
+# 为什么要两段：argon-override.css 改变量表（全站换肤），
+# ikuai.css 里有一部分是全局对齐（底色/字体/.cbi-* 控件），也要进原生页。
+# 顺序不能反：变量先就位，后面的规则才引用得到。
+
+CSS=/www/luci-static/argon/css/cascade.css
+[ -f "$CSS" ] || exit 0
+grep -q "iw-ikuai-override:start" "$CSS" 2>/dev/null && exit 0
+[ -w "$CSS" ] || exit 0
+
+{
+	printf '\n\n/* iw-ikuai-override:start */\n'
+	[ -f /www/luci-static/ikuai/argon-override.css ] && cat /www/luci-static/ikuai/argon-override.css
+	[ -f /www/luci-static/ikuai/ikuai.css ] && cat /www/luci-static/ikuai/ikuai.css
+	printf '\n/* iw-ikuai-override:end */\n'
+} >> "$CSS"
+
+logger -t ikuai "视觉覆盖层已追加到 Argon cascade.css"
+exit 0
