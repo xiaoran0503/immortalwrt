@@ -1,0 +1,67 @@
+#!/bin/sh
+#
+# ImmortalWrt PVE 首次启动默认配置
+# 由 uci-defaults 机制在第一次开机时执行一次，成功后脚本自动删除。
+# 只调用 uci 改配置，不修改上游源码，保证每周合并上游零冲突。
+#
+
+# ---------- 1. LAN 网段 ----------
+uci -q set network.lan.ipaddr='10.0.0.1'
+uci -q set network.lan.netmask='255.255.255.0'
+uci -q set network.lan.ip6assign='60'
+
+# ---------- 2. LAN 上的 DHCP / IPv6 服务 ----------
+uci -q set dhcp.lan.start='100'
+uci -q set dhcp.lan.limit='150'
+uci -q set dhcp.lan.leasetime='12h'
+uci -q set dhcp.lan.dhcpv6='server'
+uci -q set dhcp.lan.ra='server'
+uci -q set dhcp.lan.ra_slaac='1'
+uci -q set dhcp.lan.ndp='disable'
+
+# ---------- 3. WAN6：DHCPv6 客户端（拿下 IPv6 前缀）----------
+if [ -z "$(uci -q get network.wan6)" ]; then
+	uci -q set network.wan6='interface'
+	uci -q set network.wan6.proto='dhcpv6'
+	uci -q set network.wan6.device='@wan'
+	uci -q set network.wan6.reqaddress='try'
+	uci -q set network.wan6.reqprefix='auto'
+	uci -q set network.wan6.ifname='@wan'
+fi
+
+# 把 wan6 加入 wan 防火墙区域，否则 IPv6 进出会被丢
+wan_zone_idx=1
+uci -q get firewall.@zone[$wan_zone_idx] >/dev/null 2>&1 && {
+	case "$(uci -q get firewall.@zone[$wan_zone_idx].name)" in
+		wan) uci -q add_list firewall.@zone[$wan_zone_idx].network='wan6' ;;
+		*)   uci -q add_list firewall.@zone[1].network='wan6' ;;
+	esac
+}
+
+# ---------- 4. nftables 流量卸载 ----------
+# 虚拟化环境没有硬件卸载，只开软件流卸载
+uci -q set firewall.@defaults[0].flow_offloading='1'
+uci -q set firewall.@defaults[0].flow_offloading_hw='0'
+
+# ---------- 5. 界面：中文 + Argon 主题 ----------
+uci -q set luci.main.lang='zh_cn'
+uci -q set luci.main.mediaurlbase='/luci-static/argon'
+uci -q set luci.themes.Argon='/luci-static/argon'
+
+# ---------- 6. 主机名 / 时区 / NTP ----------
+uci -q set system.@system[0].hostname='ImmortalWrt'
+uci -q set system.@system[0].timezone='CST-8'
+uci -q set system.@system[0].zonename='Asia/Shanghai'
+uci -q delete system.ntp.server
+uci -q add_list system.ntp.server='ntp.aliyun.com'
+uci -q add_list system.ntp.server='cn.pool.ntp.org'
+uci -q add_list system.ntp.server='time1.cloud.tencent.com'
+
+# ---------- 7. 落盘 ----------
+uci -q commit network
+uci -q commit dhcp
+uci -q commit firewall
+uci -q commit luci
+uci -q commit system
+
+exit 0
