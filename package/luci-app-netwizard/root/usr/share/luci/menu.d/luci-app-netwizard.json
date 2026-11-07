@@ -9,5 +9,17 @@
 		"depends": {
 			"acl": [ "luci-app-netwizard" ]
 		}
+	},
+
+	"admin/services/netwizard/advanced": {
+		"title": "网络向导 · 高级模式",
+		"order": 11,
+		"action": {
+			"type": "view",
+			"path": "netwizard/advanced"
+		},
+		"depends": {
+			"acl": [ "luci-app-netwizard" ]
+		}
 	}
 }
