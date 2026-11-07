@@ -10,6 +10,7 @@ on:
       - '.github/workflows/build.yml'
       - 'package/immortalwrt-custom/**'
       - 'package/luci-app-netwizard/**'
+      - 'package/luci-app-ikuai/**'
 
 concurrency:
   group: build-x86-64-pve
@@ -113,6 +114,7 @@ jobs:
           # ---- 本仓库自制包 ----
           CONFIG_PACKAGE_immortalwrt-custom=y
           CONFIG_PACKAGE_luci-app-netwizard=y
+          CONFIG_PACKAGE_luci-app-ikuai=y
           CONFIG_EOF
           make defconfig
 
@@ -120,7 +122,7 @@ jobs:
         run: |
           set -e
           missing=0
-          for p in luci-theme-argon luci-app-passwall luci-app-netwizard \
+          for p in luci-theme-argon luci-app-passwall luci-app-netwizard luci-app-ikuai \
                    immortalwrt-custom xray-core sing-box odhcp6c; do
             if grep -q "^CONFIG_PACKAGE_$p=y$" .config; then
               echo "OK   $p"
