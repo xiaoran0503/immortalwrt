@@ -13,7 +13,7 @@
 
 | 项目 | 默认值 / 行为 | 落点 |
 |---|---|---|
-| LAN 地址 | `10.0.0.1/24`（避免与现有 192.168.1.x 撞段） | `package/immortalwrt-custom/files/etc/uci-defaults/99-immortalwrt-custom` |
+| LAN 地址 | `192.168.3.19/24`（按需换成你网段里的空闲地址） | `package/immortalwrt-custom/files/etc/uci-defaults/99-immortalwrt-custom` |
 | DHCP 池 | 从 `.100` 起，150 个地址，租约 12h | 同上 |
 | IPv6 | WAN6 走 DHCPv6 客户端（`reqaddress=try`、`reqprefix=auto`），LAN 开 RA + DHCPv6 服务，`ip6assign=60` | 同上 |
 | 防火墙 | wan6 已并入 wan zone，避免 IPv6 进出被丢 | 同上 |
@@ -66,7 +66,7 @@ qm set 100 --serial0 socket
 qm start 100
 ```
 
-启动后等 30-60 秒，浏览器访问 **<http://10.0.0.1>** 即可。
+启动后等 30-60 秒，浏览器访问 **<http://192.168.3.19>** 即可。
 
 ### PVE 侧建议参数
 
@@ -93,7 +93,7 @@ ethtool -l eth0                        # 复核对列数
 
 ### 首次登录
 
-1. 浏览器打开 `http://10.0.0.1`
+1. 浏览器打开 `http://192.168.3.19`
 2. 用「服务 → 网络向导」改 LAN 网段、DHCP 池、IPv6 模式（中文界面，一页改完）
 3. 系统 → 管理权 → 设置 root 密码（**镜像默认无密码，务必先设**）
 
