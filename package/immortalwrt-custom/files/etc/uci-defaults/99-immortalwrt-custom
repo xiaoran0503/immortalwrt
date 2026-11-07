@@ -6,7 +6,7 @@
 #
 
 # ---------- 1. LAN 网段 ----------
-uci -q set network.lan.ipaddr='10.0.0.1'
+uci -q set network.lan.ipaddr='192.168.3.19'
 uci -q set network.lan.netmask='255.255.255.0'
 uci -q set network.lan.ip6assign='60'
 
