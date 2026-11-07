@@ -1,0 +1,187 @@
+name: build-x86-64-pve
+
+on:
+  schedule:
+    # 每周一 02:00 (Asia/Shanghai) = 每周日 18:00 UTC
+    - cron: '0 18 * * 0'
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build.yml'
+      - 'package/immortalwrt-custom/**'
+      - 'package/luci-app-netwizard/**'
+
+concurrency:
+  group: build-x86-64-pve
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 同步上游 ImmortalWrt
+        run: |
+          set -e
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/immortalwrt/immortalwrt.git 2>/dev/null || true
+          git fetch --no-tags upstream master
+          git log --oneline -1 upstream/master
+          if git merge --no-edit upstream/master; then
+            echo "上游合并成功"
+          else
+            echo "::error::合并上游冲突，需要人工处理"
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+          git push origin master && echo "已推送同步结果" || echo "无新提交"
+
+      - name: 释放磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      /usr/local/graalvm /usr/local/.ghcup 2>/dev/null || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 安装编译依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses-dev libssl-dev python3 python3-setuptools \
+            rsync swig zlib1g-dev unzip zip qemu-utils
+
+      - name: 缓存源码下载目录
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: dl-${{ github.run_number }}
+          restore-keys: |
+            dl-
+
+      - name: 更新 feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 生成 .config
+        run: |
+          cat > .config <<'CONFIG_EOF'
+          # ---- 目标平台：x86-64 通用（PVE / KVM 虚拟机）----
+          CONFIG_TARGET_x86=y
+          CONFIG_TARGET_x86_64=y
+          CONFIG_TARGET_x86_64_DEVICE_generic=y
+
+          # ---- 基础 LuCI ----
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-app-firewall=y
+          CONFIG_PACKAGE_luci-app-opkg=y
+
+          # ---- 主题：Argon ----
+          CONFIG_PACKAGE_luci-theme-argon=y
+
+          # ---- 中文化 ----
+          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-commands-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+
+          # ---- PassWall 及内核 ----
+          CONFIG_PACKAGE_luci-app-passwall=y
+          CONFIG_PACKAGE_xray-core=y
+          CONFIG_PACKAGE_sing-box=y
+
+          # ---- IPv6 全套 ----
+          CONFIG_PACKAGE_odhcp6c=y
+          CONFIG_PACKAGE_odhcpd-ipv6only=y
+          CONFIG_IPV6=y
+
+          # ---- 本仓库自制包 ----
+          CONFIG_PACKAGE_immortalwrt-custom=y
+          CONFIG_PACKAGE_luci-app-netwizard=y
+          CONFIG_EOF
+          make defconfig
+
+      - name: 校验关键软件包已进入配置
+        run: |
+          set -e
+          missing=0
+          for p in luci-theme-argon luci-app-passwall luci-app-netwizard \
+                   immortalwrt-custom xray-core sing-box odhcp6c; do
+            if grep -q "^CONFIG_PACKAGE_$p=y$" .config; then
+              echo "OK   $p"
+            elif grep -q "^# CONFIG_PACKAGE_$p is not set$" .config; then
+              echo "::error::包未被选中: $p"; missing=1
+            else
+              echo "::warning::配置里没有该包条目(可能包名不同): $p"
+            fi
+          done
+          [ $missing -eq 0 ] || { echo "存在关键包缺失，终止编译"; exit 1; }
+
+      - name: 编译固件
+        run: |
+          set -o pipefail
+          make -j$(nproc) 2>&1 | tee build.log
+        # 失败时保留下面的日志 artifact 便于排查
+
+      - name: 转换为 qcow2
+        run: |
+          set -e
+          mkdir -p out
+          T=bin/targets/x86/64
+          ls -1 "$T" || true
+          for f in "$T"/*combined*.img.gz; do
+            [ -e "$f" ] || continue
+            base=$(basename "$f" .img.gz)
+            echo "转换 $base"
+            gunzip -c "$f" > /tmp/disk.img
+            qemu-img convert -f raw -O qcow2 -o cluster_size=4096 \
+              /tmp/disk.img "out/immortalwrt-x86-64-pve-${base}.qcow2"
+            rm -f /tmp/disk.img
+          done
+          cd out && sha256sum *.qcow2 > SHA256SUMS.txt && ls -lh
+
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}
+          path: build.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: 发布 Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pve-${{ github.run_number }}-${{ github.run_attempt }}
+          name: ImmortalWrt x86-64 PVE 固件 #${{ github.run_number }}
+          files: |
+            out/*.qcow2
+            out/SHA256SUMS.txt
+          body: |
+            ImmortalWrt x86-64 通用镜像，面向 PVE / KVM。
+
+            - 默认 LAN: `10.0.0.1/24`，DHCP 池 `.100` 起 150 个地址
+            - 默认语言: 简体中文，主题: Argon
+            - IPv6: WAN6 DHCPv6 客户端 + LAN RA/DHCPv6 服务
+            - 已开 nftables 软件流量卸载 (flow offloading)
+            - 预置 PassWall（xray-core / sing-box 内核已装）
+            - 预置自研「网络向导」页面：一键改 LAN/DHCP/IPv6
+
+            产物为 qcow2，PVE 里 `qm importdisk <vmid> <file> <storage>` 即可。
+            详细步骤见仓库 README。
