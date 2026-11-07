@@ -21,6 +21,9 @@ permissions:
 
 env:
   TZ: Asia/Shanghai
+  # ccache 目录必须固定，且与 .config 里的 CONFIG_CCACHE_DIR 完全一致，
+  # 否则每次构建都在一个空目录里编译，缓存永远命不中。
+  CCACHE_DIR: /home/runner/.ccache
 
 jobs:
   build:
@@ -64,7 +67,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
             gettext git libncurses-dev libssl-dev python3 python3-setuptools \
-            rsync swig zlib1g-dev unzip zip qemu-utils
+            rsync swig zlib1g-dev unzip zip qemu-utils ccache
 
       - name: 缓存源码下载目录
         uses: actions/cache@v4
@@ -73,6 +76,16 @@ jobs:
           key: dl-${{ github.run_number }}
           restore-keys: |
             dl-
+
+      # ccache 复用上一次的编译产物。首次是冷缓存，从第二次构建起命中，
+      # 上游代码没变的包直接跳过编译，能把两小时压到一小时以内。
+      - name: 恢复 ccache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-${{ github.run_id }}
+          restore-keys: |
+            ccache-
 
       - name: 更新 feeds
         run: |
@@ -86,6 +99,12 @@ jobs:
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
           CONFIG_TARGET_x86_64_DEVICE_generic=y
+
+          # ---- 编译加速：ccache ----
+          CONFIG_CCACHE=y
+          CONFIG_CCACHE_DIR="/home/runner/.ccache"
+          CONFIG_CCACHE_COMPRESS=y
+          CONFIG_CCACHE_MAXSIZE="4G"
 
           # ---- 基础 LuCI ----
           CONFIG_PACKAGE_luci=y
@@ -139,6 +158,15 @@ jobs:
           done
           [ $missing -eq 0 ] || { echo "存在关键包缺失，终止编译"; exit 1; }
 
+      # 这组信息会写进 Release 说明：以后回看某一版固件时，
+      # 能立刻对上"它编的是上游哪个提交、哪天出的"，不用翻 Actions 记录。
+      - name: 记录构建元信息
+        id: meta
+        run: |
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "upstream=$(git rev-parse --short upstream/master)" >> "$GITHUB_OUTPUT"
+          echo "date=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')" >> "$GITHUB_OUTPUT"
+
       - name: 编译固件
         run: |
           set -o pipefail
@@ -171,24 +199,67 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      # artifact 只留 14 天，Release 要长期可查，所以另压一份放进附件，
+      # 排障时不用回来翻已经过期的 artifact。
+      - name: 打包编译日志
+        if: always()
+        run: |
+          mkdir -p out
+          if [ -f build.log ]; then gzip -9 -c build.log > out/build.log.gz; fi
+
       - name: 发布 Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: pve-${{ github.run_number }}-${{ github.run_attempt }}
-          name: ImmortalWrt x86-64 PVE 固件 #${{ github.run_number }}
+          # 注意引号：不加引号时 "#" 前面有空格会被 YAML 当成注释，编号就丢了
+          name: "ImmortalWrt x86-64 PVE 固件 #${{ github.run_number }}"
           files: |
             out/*.qcow2
             out/SHA256SUMS.txt
+            out/build.log.gz
           body: |
-            ImmortalWrt x86-64 通用镜像，面向 PVE / KVM。
+            ## ImmortalWrt x86-64 · PVE / KVM
 
-            - 默认 LAN: `10.0.0.1/24`，DHCP 池 `.100` 起 150 个地址
-            - 默认语言: 简体中文，主题: Argon
-            - IPv6: WAN6 DHCPv6 客户端 + LAN RA/DHCPv6 服务
-            - 已开 nftables 软件流量卸载 (flow offloading)
-            - 预置 PassWall（xray-core / sing-box 内核已装）
-            - 预置自研「网络向导」页面：一键改 LAN/DHCP/IPv6
+            构建时间 `${{ steps.meta.outputs.date }}`（Asia/Shanghai）
+            本仓库提交 `${{ steps.meta.outputs.commit }}`　上游提交 `${{ steps.meta.outputs.upstream }}`
 
-            产物为 qcow2，PVE 里 `qm importdisk <vmid> <file> <storage>` 即可。
-            详细步骤见仓库 README。
+            ### 默认形态：旁路由，不接管 DHCP
+
+            开机即是一台旁路由，**不跑 DHCP、也不发 IPv6 RA**，不会和主路由抢地址。
+
+            | 项 | 默认值 |
+            |---|---|
+            | 后台地址 | `http://192.168.3.19` |
+            | 网关 / DNS | `192.168.3.1`（指回主路由，旁路由自己才能上网） |
+            | DHCP 服务 | 已关闭 |
+            | IPv6 RA / DHCPv6 | 已关闭（否则终端会拿到两个 IPv6 网关） |
+            | 流量卸载 | nftables 软件 offload 已开 |
+
+            **要让终端走这台旁路由**，把网关指向 `192.168.3.19` —— 在爱快「DHCP 设置」里改下发的网关最快，不用逐台改终端。
+
+            > 主路由若不是 `192.168.3.1`，进后台「网络 → 接口 → LAN」改网关和 DNS 两项。
+
+            ### 预装内容
+
+            - **PassWall**，含 xray-core 与 sing-box 双内核
+            - **Argon 主题 + 简体中文**，开箱即用
+            - **仿爱快风格总览首页**，默认进入；右上角「原生界面 ↗」随时回原版 LuCI 调高级参数
+            - **qemu-ga**：PVE 里还需在虚拟机「选项 → QEMU Guest Agent」勾选，面板才显示 IP
+            - **网络向导**：一键切换主路由 / 旁路由 / PPPoE 拨号
+            - IPv6 全套（odhcp6c + odhcpd-ipv6only）
+
+            ### 部署到 PVE
+
+            ```bash
+            qm importdisk <vmid> <qcow2 文件> <存储名>
+            qm set <vmid> --scsi0 <存储名>:vm-<vmid>-disk-0
+            qm set <vmid> --boot c --bootdisk scsi0
+            qm set <vmid> --serial0 socket --vga serial0
+            qm set <vmid> --onboot 1
+            ```
+
+            ### 排障
+
+            附件 `build.log.gz` 是本次编译的完整日志，编译出问题先看它。
+            Actions 里另有同名 artifact，但只保留 14 天。
