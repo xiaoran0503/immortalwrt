@@ -57,7 +57,15 @@ uci -q add_list system.ntp.server='ntp.aliyun.com'
 uci -q add_list system.ntp.server='cn.pool.ntp.org'
 uci -q add_list system.ntp.server='time1.cloud.tencent.com'
 
-# ---------- 7. 落盘 ----------
+# ---------- 7. PVE Guest Agent ----------
+# qemu-ga 包只装 /etc/init.d/qemu-ga，不带 rc.d 自启链接；预装进固件时
+# postinst 也不执行。不在这里 enable 一次，PVE 面板就永远看不到这台机的 IP。
+if [ -x /etc/init.d/qemu-ga ]; then
+	/etc/init.d/qemu-ga enable
+	/etc/init.d/qemu-ga start 2>/dev/null
+fi
+
+# ---------- 8. 落盘 ----------
 uci -q commit network
 uci -q commit dhcp
 uci -q commit firewall
