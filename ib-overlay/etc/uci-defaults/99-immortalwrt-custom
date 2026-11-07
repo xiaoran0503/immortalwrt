@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# ImmortalWrt PVE 首次启动默认配置
+# 由 uci-defaults 机制在第一次开机时执行一次，成功后脚本自动删除。
+# 只调用 uci 改配置，不修改上游源码，保证每周合并上游零冲突。
+#
+
+# ---------- 1. LAN 网段（旁路由形态）----------
+uci -q set network.lan.ipaddr='192.168.3.19'
+uci -q set network.lan.netmask='255.255.255.0'
+# 旁路由自己也要能上网（NTP、插件更新、PassWall 订阅），
+# 所以网关和 DNS 必须指回主路由。若你家主路由不是 192.168.3.1，
+# 改下面两行，或用「网络向导 → 配置为旁路由」重填。
+uci -q set network.lan.gateway='192.168.3.1'
+uci -q set network.lan.dns='192.168.3.1'
+uci -q set network.lan.delegate='0'
+uci -q set network.lan.ip6assign='60'
+
+# ---------- 2. 关掉 LAN 上的 DHCP / RA ----------
+# 旁路由绝不能和主路由抢地址，否则局域网会随机断网。
+# RA 也必须一起停：主路由在发 RA，这台再发一份，终端会拿到两个 IPv6 网关。
+uci -q set dhcp.lan.ignore='1'
+uci -q set dhcp.lan.dhcpv6='disabled'
+uci -q set dhcp.lan.ra='disabled'
+uci -q set dhcp.lan.ndp='disabled'
+
+# ---------- 3. WAN6：DHCPv6 客户端（拿下 IPv6 前缀）----------
+if [ -z "$(uci -q get network.wan6)" ]; then
+	uci -q set network.wan6='interface'
+	uci -q set network.wan6.proto='dhcpv6'
+	uci -q set network.wan6.device='@wan'
+	uci -q set network.wan6.reqaddress='try'
+	uci -q set network.wan6.reqprefix='auto'
+	uci -q set network.wan6.ifname='@wan'
+fi
+
+# 把 wan6 加入 wan 防火墙区域，否则 IPv6 进出会被丢
+wan_zone_idx=1
+uci -q get firewall.@zone[$wan_zone_idx] >/dev/null 2>&1 && {
+	case "$(uci -q get firewall.@zone[$wan_zone_idx].name)" in
+		wan) uci -q add_list firewall.@zone[$wan_zone_idx].network='wan6' ;;
+		*)   uci -q add_list firewall.@zone[1].network='wan6' ;;
+	esac
+}
+
+# ---------- 4. nftables 流量卸载 ----------
+# 虚拟化环境没有硬件卸载，只开软件流卸载
+uci -q set firewall.@defaults[0].flow_offloading='1'
+uci -q set firewall.@defaults[0].flow_offloading_hw='0'
+
+# ---------- 5. 界面：中文 + Argon 主题 ----------
+uci -q set luci.main.lang='zh_cn'
+uci -q set luci.main.mediaurlbase='/luci-static/argon'
+uci -q set luci.themes.Argon='/luci-static/argon'
+
+# ---------- 6. 主机名 / 时区 / NTP ----------
+uci -q set system.@system[0].hostname='ImmortalWrt'
+uci -q set system.@system[0].timezone='CST-8'
+uci -q set system.@system[0].zonename='Asia/Shanghai'
+uci -q delete system.ntp.server
+uci -q add_list system.ntp.server='ntp.aliyun.com'
+uci -q add_list system.ntp.server='cn.pool.ntp.org'
+uci -q add_list system.ntp.server='time1.cloud.tencent.com'
+
+# ---------- 7. PVE Guest Agent ----------
+# qemu-ga 包只装 /etc/init.d/qemu-ga，不带 rc.d 自启链接；预装进固件时
+# postinst 也不执行。不在这里 enable 一次，PVE 面板就永远看不到这台机的 IP。
+if [ -x /etc/init.d/qemu-ga ]; then
+	/etc/init.d/qemu-ga enable
+	/etc/init.d/qemu-ga start 2>/dev/null
+fi
+
+# ---------- 8. 落盘 ----------
+uci -q commit network
+uci -q commit dhcp
+uci -q commit firewall
+uci -q commit luci
+uci -q commit system
+
+exit 0

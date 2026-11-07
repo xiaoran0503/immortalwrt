@@ -1,0 +1,159 @@
+name: build-imagebuilder-x86-64-pve
+
+# ImageBuilder 分支：不编译工具链，直接用官方预编译包组装镜像。
+# 全流程通常 10–20 分钟，代价是镜像里的包来自官方 release 二进制，
+# 不是从本仓库源码编出来的。
+on:
+  schedule:
+    # 每周一 02:00 (Asia/Shanghai) = 每周日 18:00 UTC
+    - cron: '0 18 * * 0'
+  workflow_dispatch:
+  push:
+    branches: [imagebuilder]
+    paths:
+      - '.github/workflows/build-imagebuilder.yml'
+      - 'ib-overlay/**'
+
+concurrency:
+  group: ib-build
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  TZ: Asia/Shanghai
+  IB_VER: "25.12.2"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载 ImageBuilder
+        run: |
+          set -e
+          URL="https://downloads.immortalwrt.org/releases/${IB_VER}/targets/x86/64/immortalwrt-imagebuilder-${IB_VER}-x86-64.Linux-x86_64.tar.zst"
+          echo "下载 $URL"
+          curl -fL --retry 3 --retry-delay 5 -o ib.tar.zst "$URL"
+          ls -lh ib.tar.zst
+          mkdir -p ib
+          tar --zstd -xf ib.tar.zst -C ib --strip-components=1
+          echo "--- 解压结果 ---"
+          ls ib
+
+      - name: 查看可用 profile
+        run: |
+          cd ib
+          if [ -f .profiles.json ]; then
+            python3 -c "import json;d=json.load(open('.profiles.json'));print('profiles:',{k:v.get('titles',{}).get('en','') for k,v in d.get('profiles',{}).items()})"
+          else
+            ls -a | head -20
+          fi
+
+      - name: 安装 qemu-utils
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-utils zstd
+
+      - name: 组装镜像
+        run: |
+          set -o pipefail
+          cd ib
+          make image \
+            PROFILE=generic \
+            PACKAGES="luci-theme-argon luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn luci-i18n-commands-zh-cn luci-i18n-package-manager-zh-cn luci-app-passwall xray-core sing-box odhcp6c odhcpd-ipv6only qemu-ga" \
+            FILES="$GITHUB_WORKSPACE/ib-overlay" \
+            EXTRA_IMAGE_NAME="pve" \
+            ROOTFS_PARTSIZE=1024 2>&1 | tee ../ib-build.log
+
+      - name: 转换为 qcow2
+        run: |
+          set -e
+          shopt -s nullglob
+          mkdir -p out
+          T=ib/bin/targets/x86/64
+          echo "--- 产出文件 ---"
+          ls -1 "$T"
+          files=("$T"/*-ext4-combined-efi.img.gz)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::没有找到 ext4-combined-efi 镜像，检查组装步骤日志"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            base=$(basename "$f" .img.gz)
+            echo "转换 $base"
+            gunzip -c "$f" > /tmp/disk.img
+            qemu-img convert -f raw -O qcow2 -o cluster_size=4096 /tmp/disk.img "out/${base}.qcow2"
+            rm -f /tmp/disk.img
+          done
+          cd out && sha256sum *.qcow2 > SHA256SUMS.txt && ls -lh
+
+      - name: 上传组装日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ib-build-log-${{ github.run_number }}
+          path: ib-build.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: 打包日志进附件
+        if: always()
+        run: |
+          mkdir -p out
+          if [ -f ib-build.log ]; then gzip -9 -c ib-build.log > out/ib-build.log.gz; fi
+
+      - name: 发布 Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ib-${{ github.run_number }}-${{ github.run_attempt }}
+          name: "ImmortalWrt x86-64 PVE · IB 版 #${{ github.run_number }}"
+          files: |
+            out/*.qcow2
+            out/SHA256SUMS.txt
+            out/ib-build.log.gz
+          body: |
+            ## ImmortalWrt x86-64 · ImageBuilder 版
+
+            ImageBuilder `${{ env.IB_VER }}` 组装，包全部取自官方二进制仓库，**不含源码编译环节**。
+            构建于 `${{ github.run_number }}`，产物约 10–20 分钟出。
+
+            ### 默认形态：旁路由，不接管 DHCP
+
+            | 项 | 默认值 |
+            |---|---|
+            | 后台地址 | `http://192.168.3.19` |
+            | 网关 / DNS | `192.168.3.1`（指回主路由） |
+            | DHCP 服务 | 已关闭 |
+            | IPv6 RA / DHCPv6 | 已关闭 |
+
+            **让终端走旁路由**：在主路由把 DHCP 下发的网关改成 `192.168.3.19`。
+
+            ### 预装
+
+            - PassWall（xray-core / sing-box 双内核）
+            - Argon 主题 + 简体中文
+            - 仿爱快风格总览首页（默认进入），右上角「原生界面 ↗」回原版 LuCI
+            - qemu-ga（PVE 里需在虚拟机选项勾选 QEMU Guest Agent）
+            - 网络向导、IPv6 全套
+
+            ### 部署到 PVE
+
+            ```bash
+            qm importdisk <vmid> <qcow2 文件> <存储名>
+            qm set <vmid> --scsi0 <存储名>:vm-<vmid>-disk-0
+            qm set <vmid> --boot c --bootdisk scsi0
+            qm set <vmid> --serial0 socket --vga serial0
+            qm set <vmid> --onboot 1
+            ```
+
+            排障看附件 `ib-build.log.gz`。
+
+            > 这一版与 master 分支的区别：master 从源码全量编译（约 2 小时，可打源码补丁）；
+            > 这一版用官方预编译包组装（约 15 分钟，但镜像内容受官方仓库已有包限制）。

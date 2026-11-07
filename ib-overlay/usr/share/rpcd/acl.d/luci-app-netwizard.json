@@ -1,0 +1,19 @@
+{
+	"luci-app-netwizard": {
+		"description": "Grant access to the network wizard",
+		"read": {
+			"ubus": {
+				"uci": [ "get", "state" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"uci": [ "set", "commit", "apply" ]
+			},
+			"file": {
+				"/sbin/reload_config": [ "exec" ],
+				"/etc/init.d/network": [ "exec" ]
+			}
+		}
+	}
+}

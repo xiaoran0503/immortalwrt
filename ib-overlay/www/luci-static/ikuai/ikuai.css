@@ -1,0 +1,142 @@
+/* ══════════════════════════════════════════════════════════════════
+   ImmortalWrt 简洁控制台 · 视觉层
+   设计定稿：钴蓝 #2D5BD8 / 白色侧栏 / 行高 44px / 冷石板中性阶
+
+   两条约定，改样式前先读：
+   1) 自定义变量一律 --iw- 前缀。Argon 自己有一套 --primary 之类的变量，
+      不劫持它的名字，两套主题才能并存而不互相污染。
+   2) 第一部分是「全局对齐」（底色/字体/通用控件），原生页和新首页都吃；
+      第二部分才是首页专用组件。想只改首页，就只动第二部分。
+   ══════════════════════════════════════════════════════════════════ */
+
+:root{
+  --iw-page:#eceff3; --iw-bg:#fff; --iw-panel-2:#f6f7f9;
+  --iw-border:rgba(35,39,47,.075);
+  --iw-ink-1:#14171c; --iw-ink-2:#454e5e; --iw-ink-3:#6f7c91;
+  --iw-accent:#2D5BD8; --iw-accent-2:#C4633F;
+  --iw-accent-soft:rgba(45,91,216,.10); --iw-glow:rgba(45,91,216,.32);
+  --iw-ok:#1E8A5F; --iw-ok-ink:#0F5C40; --iw-ok-soft:rgba(30,138,95,.11);
+  --iw-bad:#C0453C; --iw-bad-ink:#8C2C25; --iw-bad-soft:rgba(192,69,60,.11);
+  --iw-warn:#B77A16; --iw-warn-ink:#7A4E05; --iw-warn-soft:rgba(183,122,22,.13);
+  --iw-r-card:10px; --iw-r-btn:6px; --iw-chip:999px;
+  --iw-row:44px;
+  --iw-font:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+/* ── 一、全局对齐：原生页与新首页站在同一块地上 ───────────────── */
+body{
+  background:var(--iw-page) !important;
+  background-image:none !important;
+  color:var(--iw-ink-1);
+  font-family:var(--iw-font);
+  -webkit-font-smoothing:antialiased;
+}
+#maincontent{background:var(--iw-page);color:var(--iw-ink-1)}
+
+/* 通用控件：Argon 与原生页都用 .cbi-*，改这里等于全站生效 */
+.cbi-button{
+  border-radius:var(--iw-r-btn) !important;
+  font-family:var(--iw-font);
+}
+.cbi-button-apply,.cbi-button-save,.cbi-button-action{
+  background:var(--iw-accent) !important;
+  border-color:var(--iw-accent) !important;
+  color:#fff !important;
+}
+.cbi-input-text,.cbi-input-password,.cbi-input-select{
+  border-radius:var(--iw-r-btn) !important;
+}
+.cbi-input-text:focus,.cbi-input-password:focus,.cbi-input-select:focus{
+  border-color:var(--iw-accent) !important;
+  box-shadow:0 0 0 3px var(--iw-accent-soft) !important;
+}
+
+/* ── 二、首页专用组件 ─────────────────────────────────────────── */
+.iw-root{font-size:14px;line-height:1.6;color:var(--iw-ink-1)}
+.iw-root *{box-sizing:border-box}
+.iw-num{font-variant-numeric:tabular-nums}
+
+/* 页头 */
+.iw-head{display:flex;align-items:center;gap:12px;padding:6px 0 16px}
+.iw-head h2{font-size:19px;font-weight:650;letter-spacing:.01em;margin:0}
+.iw-head .iw-meta{font-size:12px;color:var(--iw-ink-3);padding-left:12px;
+  border-left:1px solid var(--iw-border)}
+.iw-head .iw-sp{margin-left:auto}
+.iw-native{font-size:12.5px;color:var(--iw-ink-3);border:1px solid var(--iw-border);
+  border-radius:var(--iw-r-btn);padding:5px 10px;text-decoration:none;white-space:nowrap}
+.iw-native:hover{color:var(--iw-accent);border-color:var(--iw-accent);
+  background:var(--iw-accent-soft) !important}
+
+/* 指标条：主指标比次指标大一档 */
+.iw-kpis{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:12px}
+.iw-kpi{background:var(--iw-bg);border:1px solid var(--iw-border);
+  border-radius:var(--iw-r-card);padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.iw-kpi .iw-k{font-size:12px;color:var(--iw-ink-3)}
+.iw-kpi .iw-v{font-size:22px;font-weight:700;letter-spacing:-.01em}
+.iw-kpi .iw-u{font-size:13px;font-weight:500;color:var(--iw-ink-3);margin-left:3px}
+.iw-kpi .iw-foot{font-size:12px;color:var(--iw-ink-3)}
+.iw-kpi.iw-lead{background:linear-gradient(176deg,var(--iw-accent-soft) 0%,rgba(255,255,255,0) 64%)}
+.iw-kpi.iw-lead .iw-v{font-size:36px;font-weight:750}
+
+/* 卡片 */
+.iw-grid{display:grid;grid-template-columns:2.1fr 1fr;gap:12px}
+.iw-card{background:var(--iw-bg);border:1px solid var(--iw-border);
+  border-radius:var(--iw-r-card);display:flex;flex-direction:column;overflow:hidden}
+.iw-card-hd{display:flex;align-items:center;gap:10px;padding:12px 16px;
+  border-bottom:1px solid var(--iw-border);font-weight:600;font-size:14px}
+.iw-card-hd .iw-r{margin-left:auto;color:var(--iw-ink-3);font-weight:400;font-size:12px}
+.iw-card-bd{padding:14px 16px;flex:1;display:flex;flex-direction:column;min-height:0}
+
+/* 流量曲线 */
+.iw-legend{display:flex;gap:14px;font-size:12px;color:var(--iw-ink-3);margin-bottom:8px}
+.iw-legend i{display:inline-block;width:14px;height:3px;border-radius:2px;
+  margin-right:5px;vertical-align:middle}
+.iw-plot{position:relative;flex:1;min-height:180px}
+.iw-plot svg{display:block;width:100%;height:100%}
+.iw-xticks{display:flex;justify-content:space-between;font-size:11px;
+  color:var(--iw-ink-3);padding-top:6px;border-top:1px solid var(--iw-border)}
+
+/* 资源条 */
+.iw-res{display:flex;flex-direction:column;gap:12px}
+.iw-res .iw-rowline{display:grid;grid-template-columns:56px 1fr 62px;gap:10px;
+  align-items:center;font-size:12.5px}
+.iw-res .iw-lab{color:var(--iw-ink-3)}
+.iw-res .iw-val{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.iw-bar{height:6px;border-radius:3px;background:var(--iw-panel-2);overflow:hidden}
+.iw-bar i{display:block;height:100%;border-radius:3px;background:var(--iw-accent)}
+.iw-bar i.iw-alt{background:var(--iw-accent-2)}
+.iw-bar i.iw-warn{background:var(--iw-warn)}
+
+/* 终端表：B 端的主角，一条细线 + 行高就是密度 */
+.iw-table{width:100%;border-collapse:collapse}
+.iw-table th,.iw-table td{text-align:left;padding:0 16px;height:var(--iw-row);
+  border-bottom:1px solid var(--iw-border);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.iw-table th{color:var(--iw-ink-3);font-weight:500;font-size:12px;
+  letter-spacing:.02em;height:38px;background:var(--iw-panel-2)}
+.iw-table tbody tr:hover{background:var(--iw-panel-2)}
+.iw-table tbody tr:last-child td{border-bottom:0}
+.iw-table td.iw-n{text-align:right;font-variant-numeric:tabular-nums}
+.iw-table .iw-muted{color:var(--iw-ink-3)}
+
+/* 状态标签 */
+.iw-tag{display:inline-block;padding:1px 9px;border-radius:var(--iw-chip);
+  font-size:12px;background:var(--iw-ok-soft);color:var(--iw-ok-ink)}
+.iw-tag.iw-warn{background:var(--iw-warn-soft);color:var(--iw-warn-ink)}
+.iw-tag.iw-bad{background:var(--iw-bad-soft);color:var(--iw-bad-ink)}
+.iw-tag.iw-mute{background:var(--iw-panel-2);color:var(--iw-ink-3)}
+
+/* 拨号 / 代理 列表 */
+.iw-svc .iw-item{display:flex;align-items:center;gap:10px;padding:11px 0;
+  border-bottom:1px solid var(--iw-border);font-size:13px}
+.iw-svc .iw-item:last-child{border-bottom:0}
+.iw-svc .iw-item .iw-k{color:var(--iw-ink-3);width:76px;flex:none}
+.iw-svc .iw-item .iw-v{font-weight:600;font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis}
+.iw-svc .iw-item .iw-tag{margin-left:auto}
+
+/* 四态：有数据 / 空 / 加载 / 异常，一个都不能少 */
+.iw-state{padding:54px 20px;text-align:center;color:var(--iw-ink-3)}
+.iw-state b{display:block;color:var(--iw-ink-1);font-size:15px;margin-bottom:6px}
+.iw-skel{background:linear-gradient(90deg,var(--iw-panel-2),rgba(246,247,249,.4),var(--iw-panel-2));
+  height:var(--iw-row);border-radius:6px;margin:6px 16px}

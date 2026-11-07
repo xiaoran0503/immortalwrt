@@ -1,0 +1,10 @@
+{
+	"admin/ikuai": {
+		"title": "简洁控制台",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "ikuai/overview"
+		}
+	}
+}
