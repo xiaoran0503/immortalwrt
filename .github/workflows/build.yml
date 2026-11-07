@@ -111,6 +111,11 @@ jobs:
           CONFIG_PACKAGE_odhcpd-ipv6only=y
           CONFIG_IPV6=y
 
+          # ---- PVE 虚拟化 ----
+          # 包名是 qemu-ga（TITLE: QEMU Guest Agent），不是 qemu-guest-agent。
+          # PVE 侧还需要在虚拟机选项里把 QEMU Guest Agent 打开，才会显示 IP。
+          CONFIG_PACKAGE_qemu-ga=y
+
           # ---- 本仓库自制包 ----
           CONFIG_PACKAGE_immortalwrt-custom=y
           CONFIG_PACKAGE_luci-app-netwizard=y
@@ -123,7 +128,7 @@ jobs:
           set -e
           missing=0
           for p in luci-theme-argon luci-app-passwall luci-app-netwizard luci-app-ikuai \
-                   immortalwrt-custom xray-core sing-box odhcp6c; do
+                   immortalwrt-custom xray-core sing-box odhcp6c qemu-ga; do
             if grep -q "^CONFIG_PACKAGE_$p=y$" .config; then
               echo "OK   $p"
             elif grep -q "^# CONFIG_PACKAGE_$p is not set$" .config; then
