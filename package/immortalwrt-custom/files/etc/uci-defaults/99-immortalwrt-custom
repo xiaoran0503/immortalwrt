@@ -5,19 +5,24 @@
 # 只调用 uci 改配置，不修改上游源码，保证每周合并上游零冲突。
 #
 
-# ---------- 1. LAN 网段 ----------
+# ---------- 1. LAN 网段（旁路由形态）----------
 uci -q set network.lan.ipaddr='192.168.3.19'
 uci -q set network.lan.netmask='255.255.255.0'
+# 旁路由自己也要能上网（NTP、插件更新、PassWall 订阅），
+# 所以网关和 DNS 必须指回主路由。若你家主路由不是 192.168.3.1，
+# 改下面两行，或用「网络向导 → 配置为旁路由」重填。
+uci -q set network.lan.gateway='192.168.3.1'
+uci -q set network.lan.dns='192.168.3.1'
+uci -q set network.lan.delegate='0'
 uci -q set network.lan.ip6assign='60'
 
-# ---------- 2. LAN 上的 DHCP / IPv6 服务 ----------
-uci -q set dhcp.lan.start='100'
-uci -q set dhcp.lan.limit='150'
-uci -q set dhcp.lan.leasetime='12h'
-uci -q set dhcp.lan.dhcpv6='server'
-uci -q set dhcp.lan.ra='server'
-uci -q set dhcp.lan.ra_slaac='1'
-uci -q set dhcp.lan.ndp='disable'
+# ---------- 2. 关掉 LAN 上的 DHCP / RA ----------
+# 旁路由绝不能和主路由抢地址，否则局域网会随机断网。
+# RA 也必须一起停：主路由在发 RA，这台再发一份，终端会拿到两个 IPv6 网关。
+uci -q set dhcp.lan.ignore='1'
+uci -q set dhcp.lan.dhcpv6='disabled'
+uci -q set dhcp.lan.ra='disabled'
+uci -q set dhcp.lan.ndp='disabled'
 
 # ---------- 3. WAN6：DHCPv6 客户端（拿下 IPv6 前缀）----------
 if [ -z "$(uci -q get network.wan6)" ]; then
