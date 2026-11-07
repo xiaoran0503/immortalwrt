@@ -1,0 +1,93 @@
+/* ─────────────────────────────────────────────────────────────────
+   Argon 覆盖层：只改它的变量表 + 三处结构，不动它任何一条选择器。
+
+   变量名来自 ImmortalWrt 上游 luci-theme-argon 的 cascade.css
+   (themes/luci-theme-argon/htdocs/luci-static/argon/css/cascade.css)
+   Argon 本身是变量驱动的：--primary / --surface-raised / --radius-menu
+   这一层改掉，全站所有页面跟着变，不用逐页重写。
+
+   代价是「上游改变量名就会静默失效」。所以每次同步上游后，要在真机上
+   看一次原生页的顶栏、侧栏选中态、主按钮 —— 三处都还是钴蓝才算没坏。
+   ───────────────────────────────────────────────────────────────── */
+
+:root {
+  --light-primary: #2D5BD8 !important;
+  --primary: #2D5BD8 !important;
+  --background-color: #eceff3 !important;
+  --main-bg: transparent !important;
+
+  --surface-color: #fff !important;
+  --surface-raised: #fff !important;
+  --surface-panel: #fff !important;
+  --surface-muted: #f6f7f9 !important;
+  --surface-inset: #f6f7f9 !important;
+  --surface-active: #eef1f5 !important;
+  --surface-contrast: #e9edf2 !important;
+  --row-color: #f6f7f9 !important;
+  --row-alt: #fff !important;
+
+  --text-color: #454e5e !important;
+  --text-strong: #14171c !important;
+  --muted-text: #6f7c91 !important;
+  --placeholder-color: #6f7c91 !important;
+  --menu-color: #454e5e !important;
+  --main-menu-color: #14171c !important;
+  --sidebar-brand-color: #14171c !important;
+
+  --border-color: rgba(35, 39, 47, .075) !important;
+  --border-subtle: rgba(35, 39, 47, .075) !important;
+  --border-muted: rgba(35, 39, 47, .06) !important;
+  --control-border: rgba(35, 39, 47, .10) !important;
+
+  --radius-menu: 6px !important;
+  --radius-card: 10px !important;
+  --radius-control: 6px !important;
+
+  --accent-shadow-color: rgba(45, 91, 216, .10) !important;
+  --focus-ring: #2D5BD8 !important;
+  --progress-fill: #2D5BD8 !important;
+  --tab-color: #2D5BD8 !important;
+  --link-color: #2D5BD8 !important;
+  --help-text: #2D5BD8 !important;
+
+  --header-bg: #fff !important;
+  --sidebar-shadow: 0 0 0 1px rgba(35, 39, 47, .06) !important;
+}
+
+/* ── 顶栏 ──
+   默认是主色块配白字。改白之后白字就看不见了，
+   所以字色必须一起改，否则等于把信息藏起来。 */
+header {
+  color: #14171c !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+header.bg-primary {
+  background-color: #fff !important;
+  border-bottom: 1px solid rgba(35, 39, 47, .075) !important;
+  box-shadow: none !important;
+}
+header::after { background-color: #fff !important; }
+#xhr_poll_status *,
+header .fill .status span[data-indicator="poll-status"] { color: #6f7c91 !important; }
+
+/* ── 侧栏 ──
+   宽度对齐设计稿 224px；三色图标（橙/青/紫）统一成中性灰，
+   否则左边是彩色图标阵、右边是单色图表，一眼两套东西。 */
+.main-left {
+  --sidebar-width: 224px !important;
+  --menu-icon-system: #6f7c91 !important;
+  --menu-icon-services: #6f7c91 !important;
+  --menu-icon-network: #6f7c91 !important;
+  --menu-icon-muted: #6f7c91 !important;
+  background-color: #fff !important;
+  box-shadow: 1px 0 0 rgba(35, 39, 47, .06) !important;
+}
+.main-left .nav > li > a:first-child { color: #454e5e !important; }
+.main-left .nav > li > a:first-child.active,
+.main-left .nav > li > a:first-child:hover {
+  color: #2D5BD8 !important;
+  background: rgba(45, 91, 216, .10) !important;
+}
+.main-left .nav > li > a:first-child.active .menu-icon,
+.main-left .nav > li > a:first-child:hover .menu-icon { color: #2D5BD8 !important; }
