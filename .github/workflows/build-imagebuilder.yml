@@ -115,21 +115,20 @@ jobs:
           fi
           # SDK 出厂没有 .config，直接 compile 会去跑 menuconfig 并要求终端，TERM=unknown 直接死。
           make defconfig
-          # luci.mk 打包时会调用 jsmin / csstidy / luasrcdiet / ucode-minify 这些 host 工具，
-          # 而 lua/host、luci-base/host 又在 PKG_BUILD_DEPENDS 里写死，会顺着依赖链把
-          # target 侧的 ucode-mod-html、rpcd-mod-luci、lucihttp 一起拉起来编译；
-          # SDK 的 staging 不带这些 C 包的开发头文件，于是必然 fatal error。
-          # 我们这两个包是纯 Lua/JS + 静态文件，不需要任何压缩，所以把四个开关关掉，
-          # 并清空 DEPENDS 与 PKG_BUILD_DEPENDS，让 make 只做「拷贝 + 打成 apk」。
-          # SDK 里的 scripts/config 是个目录（不是 OpenWrt 主仓那个配置脚本），
-          # 所以直接改 .config：先删掉旧值再追加 not set，再 oldconfig 让它生效。
-          sed -i -e '/^CONFIG_LUCI_JSMIN=/d' -e '/^CONFIG_LUCI_CSSTIDY=/d' \
-                 -e '/^CONFIG_LUCI_SRCDIET=/d' -e '/^CONFIG_LUCI_UTMIN=/d' .config
-          printf '%s\n' '# CONFIG_LUCI_JSMIN is not set' '# CONFIG_LUCI_CSSTIDY is not set' \
-                        '# CONFIG_LUCI_SRCDIET is not set' '# CONFIG_LUCI_UTMIN is not set' >> .config
-          make oldconfig </dev/null >/dev/null 2>&1 || true
-          make package/luci-app-ikuai/compile LUCI_DEPENDS="" PKG_BUILD_DEPENDS="" -j$(nproc) V=s
-          make package/luci-app-netwizard/compile LUCI_DEPENDS="" PKG_BUILD_DEPENDS="" -j$(nproc) V=s
+          # 这两个包是纯 Lua/JS + 静态文件，依赖由 IB 的 PACKAGES 负责，CI 里清空 DEPENDS，
+          # 避免 make 顺着 +luci-base 这条链把 SDK 里缺头文件的 C 包一起拉起来编。
+          # （命令行 LUCI_DEPENDS="" 在 OpenWrt 的递归 make 里会被丢掉，只能改文件）
+          sed -i 's|^LUCI_DEPENDS:=.*|LUCI_DEPENDS:=|' \
+                 package/luci-app-ikuai/Makefile package/luci-app-netwizard/Makefile
+          # luci.mk:131 无条件把 lua/host、luci-base/host 写进 PKG_BUILD_DEPENDS，
+          # 这条 host 工具链又会拉起 target 侧的 ucode-mod-html / rpcd-mod-luci / lucihttp，
+          # 而 SDK 的 staging 不带它们的开发头文件，必然 fatal error。改成只保留空追加。
+          if [ -f feeds/luci/luci.mk ]; then
+            sed -i 's|^PKG_BUILD_DEPENDS += lua/host luci-base/host.*|PKG_BUILD_DEPENDS += $(LUCI_BUILD_DEPENDS)|' feeds/luci/luci.mk
+            grep -n 'PKG_BUILD_DEPENDS' feeds/luci/luci.mk || true
+          fi
+          make package/luci-app-ikuai/compile -j$(nproc) V=s
+          make package/luci-app-netwizard/compile -j$(nproc) V=s
           echo "--- 编出的 apk ---"
           find bin/packages -name '*.apk' -exec ls -lh {} \;
 
