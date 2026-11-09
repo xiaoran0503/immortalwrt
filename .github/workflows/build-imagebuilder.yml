@@ -55,10 +55,12 @@ jobs:
             ls -a | head -20
           fi
 
-      - name: 安装 qemu-utils
+      - name: 安装组装依赖
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends qemu-utils zstd
+          # x86 的镜像集里包含一个 EFI ISO，打包时会调用 mkisofs。
+          # 缺了它整个装配会在最后一步 Error 127 失败，前面全白跑。
+          sudo apt-get install -y --no-install-recommends qemu-utils zstd genisoimage
 
       - name: 组装镜像
         run: |
