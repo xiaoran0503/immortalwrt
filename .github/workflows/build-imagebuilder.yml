@@ -95,8 +95,12 @@ jobs:
           # SDK 出厂没有 .config，直接 compile 会去跑 menuconfig 并要求终端，TERM=unknown 直接死。
           # 先 defconfig 生成一份默认配置，这一步是非交互的。
           make defconfig
-          make package/luci-app-ikuai/compile -j$(nproc) V=s
-          make package/luci-app-netwizard/compile -j$(nproc) V=s
+          # SDK 的 staging 里没有 feeds 那些 C 包的开发头文件（ucode、libnl-tiny、liblua），
+          # 一旦 make 顺着 DEPENDS 去编 luci-base 那条链就会 fatal error。
+          # 我们这两个包是纯 Lua/JS + 静态文件，没有编译产物，只需要打包这一步，
+          # 所以用命令行把 LUCI_DEPENDS 清空，跳过依赖链，只打自己的包。
+          make package/luci-app-ikuai/compile LUCI_DEPENDS="" -j$(nproc) V=s
+          make package/luci-app-netwizard/compile LUCI_DEPENDS="" -j$(nproc) V=s
           echo "--- 编出的 apk ---"
           find bin/packages -name '*.apk' -exec ls -lh {} \;
 
@@ -115,7 +119,7 @@ jobs:
           cd ib
           make image \
             PROFILE=generic \
-            PACKAGES="luci-theme-argon luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn luci-i18n-commands-zh-cn luci-i18n-package-manager-zh-cn luci-app-passwall xray-core sing-box odhcp6c odhcpd-ipv6only qemu-ga luci-app-ikuai luci-app-netwizard" \
+            PACKAGES="luci-theme-argon luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn luci-i18n-commands-zh-cn luci-i18n-package-manager-zh-cn luci-app-passwall luci-i18n-passwall-zh-cn xray-core sing-box odhcp6c odhcpd-ipv6only qemu-ga luci-app-ikuai luci-app-netwizard" \
             FILES="$GITHUB_WORKSPACE/ib-overlay" \
             EXTRA_IMAGE_NAME="pve" \
             ROOTFS_PARTSIZE=1024 2>&1 | tee ../ib-build.log

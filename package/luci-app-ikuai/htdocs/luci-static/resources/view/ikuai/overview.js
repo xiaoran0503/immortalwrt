@@ -25,6 +25,38 @@ function decodeData(r) {
 
 /* /proc/net/arp 每行：IP  0x1  0x2  MAC  *  br-lan
    只认有 MAC 的完整条目，00:00:00:00:00:00 是占位，不是真终端。 */
+/* rpcd 的 luci.getDHCPLeases 返回的是 { leases: [ ... ] }，元素字段是
+   ipaddr / macaddr / hostname；个别版本直接给数组，或给以 mac 为键的 map。
+   统一成 { ip, macaddr, hostname } —— 渲染层只认这三个字段。 */
+function leaseList(v) {
+	var raw = [], out = [];
+
+	if (Array.isArray(v)) raw = v;
+	else if (v && Array.isArray(v.leases)) raw = v.leases;
+	else if (v && typeof v === 'object') {
+		Object.keys(v).forEach(function(k) {
+			var o = v[k];
+			if (o && typeof o === 'object') {
+				if (!o.macaddr && !o.mac) o.macaddr = k;
+				raw.push(o);
+			}
+		});
+	}
+
+	raw.forEach(function(o) {
+		if (!o || typeof o !== 'object') return;
+		var ip = o.ip || o.ipaddr || '';
+		if (!ip) return;
+		out.push({
+			ip: ip,
+			macaddr: o.macaddr || o.mac || '',
+			hostname: o.hostname || o.host || ''
+		});
+	});
+
+	return out;
+}
+
 function parseArp(text) {
 	var out = [];
 	(text || '').split('\n').forEach(function(line) {
@@ -101,7 +133,7 @@ return view.extend({
 
 	render: function(data) {
 		var info = data[0] || {}, board = data[1] || {}, dump = data[2] || {};
-		var leases = data[3] || [], svcs = data[4] || {};
+		var leases = leaseList(data[3]), svcs = data[4] || {};
 		var self = this;
 
 		/* 旁路由模式关掉了 DHCP，租约会一直是空的。这时终端只能从 ARP 表来，
@@ -114,12 +146,16 @@ return view.extend({
 			if (!seenIp[a.ip]) { term.push(a); seenIp[a.ip] = 1; }
 		});
 
-		/* 视觉层：只在这一页加载我们自己的 CSS，不碰主题包的 cascade.css */
-		var link = E('link', {
-			'rel': 'stylesheet',
-			'href': L.resource('ikuai', 'ikuai.css')
-		});
-		document.head.appendChild(link);
+		/* 视觉层：只在这一页加载我们自己的 CSS，不碰主题包的 cascade.css。
+		   每次轮询都会重新 render，先查一次，避免同一个 <link> 越积越多。 */
+		if (!document.querySelector('link[data-ikuai-css]')) {
+			var link = E('link', {
+				'rel': 'stylesheet',
+				'href': L.resource('ikuai', 'ikuai.css')
+			});
+			link.setAttribute('data-ikuai-css', '1');
+			document.head.appendChild(link);
+		}
 
 		var wan = findIface(dump, 'wan'), wan6 = findIface(dump, 'wan6');
 		var st  = totalStats(dump);
