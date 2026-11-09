@@ -43,7 +43,7 @@ jobs:
           set -e
           URL="https://downloads.immortalwrt.org/releases/${IB_VER}/targets/x86/64/immortalwrt-imagebuilder-${IB_VER}-x86-64.Linux-x86_64.tar.zst"
           echo "下载 $URL"
-          curl -fL --retry 3 --retry-delay 5 -o ib.tar.zst "$URL"
+          curl -fL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 1200 -o ib.tar.zst "$URL"
           ls -lh ib.tar.zst
           mkdir -p ib
           tar --zstd -xf ib.tar.zst -C ib --strip-components=1
@@ -74,7 +74,7 @@ jobs:
           set -e
           URL="https://downloads.immortalwrt.org/releases/${IB_VER}/targets/x86/64/immortalwrt-sdk-${IB_VER}-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
           echo "下载 $URL"
-          curl -fL --retry 3 --retry-delay 5 -o sdk.tar.zst "$URL"
+          curl -fL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 1200 -o sdk.tar.zst "$URL"
           ls -lh sdk.tar.zst
           mkdir -p sdk
           tar --zstd -xf sdk.tar.zst -C sdk --strip-components=1
