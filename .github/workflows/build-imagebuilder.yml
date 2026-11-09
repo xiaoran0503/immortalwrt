@@ -121,8 +121,12 @@ jobs:
           # SDK 的 staging 不带这些 C 包的开发头文件，于是必然 fatal error。
           # 我们这两个包是纯 Lua/JS + 静态文件，不需要任何压缩，所以把四个开关关掉，
           # 并清空 DEPENDS 与 PKG_BUILD_DEPENDS，让 make 只做「拷贝 + 打成 apk」。
-          ./scripts/config --disable LUCI_JSMIN --disable LUCI_CSSTIDY \
-                           --disable LUCI_SRCDIET --disable LUCI_UTMIN
+          # SDK 里的 scripts/config 是个目录（不是 OpenWrt 主仓那个配置脚本），
+          # 所以直接改 .config：先删掉旧值再追加 not set，再 oldconfig 让它生效。
+          sed -i -e '/^CONFIG_LUCI_JSMIN=/d' -e '/^CONFIG_LUCI_CSSTIDY=/d' \
+                 -e '/^CONFIG_LUCI_SRCDIET=/d' -e '/^CONFIG_LUCI_UTMIN=/d' .config
+          printf '%s\n' '# CONFIG_LUCI_JSMIN is not set' '# CONFIG_LUCI_CSSTIDY is not set' \
+                        '# CONFIG_LUCI_SRCDIET is not set' '# CONFIG_LUCI_UTMIN is not set' >> .config
           make oldconfig </dev/null >/dev/null 2>&1 || true
           make package/luci-app-ikuai/compile LUCI_DEPENDS="" PKG_BUILD_DEPENDS="" -j$(nproc) V=s
           make package/luci-app-netwizard/compile LUCI_DEPENDS="" PKG_BUILD_DEPENDS="" -j$(nproc) V=s
