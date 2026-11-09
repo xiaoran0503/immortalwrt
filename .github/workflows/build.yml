@@ -67,7 +67,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
             gettext git libncurses-dev libssl-dev python3 python3-setuptools \
-            rsync swig zlib1g-dev unzip zip qemu-utils ccache
+            rsync swig zlib1g-dev unzip zip qemu-utils ccache genisoimage
 
       - name: 缓存源码下载目录
         uses: actions/cache@v4
@@ -170,8 +170,21 @@ jobs:
       - name: 编译固件
         run: |
           set -o pipefail
-          make -j$(nproc) 2>&1 | tee build.log
-        # 失败时保留下面的日志 artifact 便于排查
+          # OpenWrt 在 -j 模式下只打印"每包一行"的摘要，真实错误落在 logs/ 里。
+          # 所以失败时必须把 logs/ 的段落打出来，否则 12KB 的 build.log 什么都说明不了。
+          if make -j$(nproc) 2>&1 | tee build.log; then
+            echo "编译成功"
+          else
+            echo "::error::编译失败，下面是 logs/ 里的详细错误"
+            echo "::group::失败详情"
+            find logs -name '*.txt' -size +1k 2>/dev/null | head -10 || true
+            for f in $(find logs -name '*.txt' -size +1k 2>/dev/null | head -3); do
+              echo "--- $f ---"
+              tail -80 "$f" || true
+            done
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - name: 转换为 qcow2
         run: |
