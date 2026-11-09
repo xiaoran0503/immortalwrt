@@ -38,12 +38,20 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 缓存 ImageBuilder
+        id: cache-ib
+        uses: actions/cache@v4
+        with:
+          path: ib
+          key: ib-${{ env.IB_VER }}-x86-64
+
       - name: 下载 ImageBuilder
+        if: steps.cache-ib.outputs.cache-hit != 'true'
         run: |
           set -e
           URL="https://downloads.immortalwrt.org/releases/${IB_VER}/targets/x86/64/immortalwrt-imagebuilder-${IB_VER}-x86-64.Linux-x86_64.tar.zst"
           echo "下载 $URL"
-          curl -fL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 1200 -o ib.tar.zst "$URL"
+          curl -fL --retry 3 --retry-delay 3 --retry-all-errors --connect-timeout 15 --max-time 300 -o ib.tar.zst "$URL"
           ls -lh ib.tar.zst
           mkdir -p ib
           tar --zstd -xf ib.tar.zst -C ib --strip-components=1
@@ -69,12 +77,25 @@ jobs:
       # 自制包（luci-app-ikuai / luci-app-netwizard）官方源里没有，
       # 所以先下 SDK 把它们编成 .apk，再丢进 IB 的 packages/ 让它按正常包安装。
       # 这样 apk 数据库里有记录，能 apk list 看到、能单独升级卸载。
+      - name: 缓存 SDK
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: sdk
+          key: sdk-${{ env.IB_VER }}-gcc14.3-musl
+
       - name: 下载 SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
         run: |
           set -e
           URL="https://downloads.immortalwrt.org/releases/${IB_VER}/targets/x86/64/immortalwrt-sdk-${IB_VER}-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+          ALT="https://dl.wrt.moe/releases/${IB_VER}/targets/x86/64/immortalwrt-sdk-${IB_VER}-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
           echo "下载 $URL"
-          curl -fL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 1200 -o sdk.tar.zst "$URL"
+          # 581MB 的大文件偶发「连上但不动」，短超时失败后立刻换官方备用域名重试
+          if ! curl -fL --retry 2 --retry-delay 3 --retry-all-errors --connect-timeout 15 --max-time 300 -o sdk.tar.zst "$URL"; then
+            echo "主源失败，改用 $ALT"
+            curl -fL --retry 3 --retry-delay 5 --retry-all-errors --connect-timeout 15 --max-time 900 -o sdk.tar.zst "$ALT"
+          fi
           ls -lh sdk.tar.zst
           mkdir -p sdk
           tar --zstd -xf sdk.tar.zst -C sdk --strip-components=1
