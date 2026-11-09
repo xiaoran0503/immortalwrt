@@ -26,6 +26,8 @@ permissions:
 env:
   TZ: Asia/Shanghai
   IB_VER: "25.12.2"
+  # runner 没有真实终端，任何走到 menuconfig 的操作都会因 ncurses 初始化失败而退出
+  TERM: dumb
 
 jobs:
   build:
@@ -90,6 +92,9 @@ jobs:
             ./scripts/feeds update luci
             ./scripts/feeds install luci
           fi
+          # SDK 出厂没有 .config，直接 compile 会去跑 menuconfig 并要求终端，TERM=unknown 直接死。
+          # 先 defconfig 生成一份默认配置，这一步是非交互的。
+          make defconfig
           make package/luci-app-ikuai/compile -j$(nproc) V=s
           make package/luci-app-netwizard/compile -j$(nproc) V=s
           echo "--- 编出的 apk ---"
