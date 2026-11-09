@@ -13,6 +13,8 @@ on:
     paths:
       - '.github/workflows/build-imagebuilder.yml'
       - 'ib-overlay/**'
+      - 'package/luci-app-ikuai/**'
+      - 'package/luci-app-netwizard/**'
 
 concurrency:
   group: ib-build
@@ -62,13 +64,53 @@ jobs:
           # 缺了它整个装配会在最后一步 Error 127 失败，前面全白跑。
           sudo apt-get install -y --no-install-recommends qemu-utils zstd genisoimage
 
+      # 自制包（luci-app-ikuai / luci-app-netwizard）官方源里没有，
+      # 所以先下 SDK 把它们编成 .apk，再丢进 IB 的 packages/ 让它按正常包安装。
+      # 这样 apk 数据库里有记录，能 apk list 看到、能单独升级卸载。
+      - name: 下载 SDK
+        run: |
+          set -e
+          URL="https://downloads.immortalwrt.org/releases/${IB_VER}/targets/x86/64/immortalwrt-sdk-${IB_VER}-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+          echo "下载 $URL"
+          curl -fL --retry 3 --retry-delay 5 -o sdk.tar.zst "$URL"
+          ls -lh sdk.tar.zst
+          mkdir -p sdk
+          tar --zstd -xf sdk.tar.zst -C sdk --strip-components=1
+          echo "--- SDK 就绪 ---"
+          ls sdk | head -20
+
+      - name: 编译自制包
+        run: |
+          set -e
+          cd sdk
+          cp -r ../package/luci-app-ikuai package/
+          cp -r ../package/luci-app-netwizard package/
+          # luci.mk 来自 feeds/luci；SDK 若未预置就拉一次
+          if [ ! -f feeds/luci/luci.mk ]; then
+            ./scripts/feeds update luci
+            ./scripts/feeds install luci
+          fi
+          make package/luci-app-ikuai/compile -j$(nproc) V=s
+          make package/luci-app-netwizard/compile -j$(nproc) V=s
+          echo "--- 编出的 apk ---"
+          find bin/packages -name '*.apk' -exec ls -lh {} \;
+
+      - name: 把 apk 放进 IB 的本地仓库
+        run: |
+          set -e
+          mkdir -p ib/packages
+          find sdk/bin/packages -name 'luci-app-ikuai*.apk' -o -name 'luci-app-netwizard*.apk' \
+            | while read -r f; do cp -v "$f" ib/packages/; done
+          echo "--- IB 本地仓库内容 ---"
+          ls -lh ib/packages
+
       - name: 组装镜像
         run: |
           set -o pipefail
           cd ib
           make image \
             PROFILE=generic \
-            PACKAGES="luci-theme-argon luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn luci-i18n-commands-zh-cn luci-i18n-package-manager-zh-cn luci-app-passwall xray-core sing-box odhcp6c odhcpd-ipv6only qemu-ga" \
+            PACKAGES="luci-theme-argon luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn luci-i18n-commands-zh-cn luci-i18n-package-manager-zh-cn luci-app-passwall xray-core sing-box odhcp6c odhcpd-ipv6only qemu-ga luci-app-ikuai luci-app-netwizard" \
             FILES="$GITHUB_WORKSPACE/ib-overlay" \
             EXTRA_IMAGE_NAME="pve" \
             ROOTFS_PARTSIZE=1024 2>&1 | tee ../ib-build.log
